@@ -3,81 +3,90 @@
 * Plugin Name: Lunu for WooCommerce - Lunu Cryptocurrencies Payment Gateway Addon
 * Plugin URI: https://lunu.io/plugins
 * Description: Cryptocurrencies Payment Gateway plugin.
-* Version: 2.0
-* Author: Lunu Solutions GmbH https://lunu.io
-* Author URI: https://lunu.io/plugins/
-* Text Domain: lunu-pay
+* Version: 2.0.0
+* Author: Lunu Solutions GmbH
+* Author URI: https://lunu.io
+* Text Domain: lunupayment-woocommerce
+* Domain Path: /languages
+* Requires at least: 5.0
+* Requires PHP: 7.2
+* WC requires at least: 3.0
+* WC tested up to: 8.0
+* License: MIT
+* License URI: https://opensource.org/licenses/MIT
 */
 
-DEFINE('LUNUPAYMENT_SERVER_NAME', $_SERVER['SERVER_NAME']);
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly
+}
 
+// Plugin version
+define('LUNUPAYMENT_VERSION', '2.0.0');
 
-$LUNUPAYMENT_DEV = strpos(LUNUPAYMENT_SERVER_NAME, 'dev.lunu.io') !== false;
-$LUNUPAYMENT_RC = strpos(LUNUPAYMENT_SERVER_NAME, 'rc.lunu.io') !== false;
-$LUNUPAYMENT_TESTING = strpos(LUNUPAYMENT_SERVER_NAME, 'testing.lunu.io') !== false;
-$LUNUPAYMENT_SANDBOX = strpos(LUNUPAYMENT_SERVER_NAME, 'sandbox.lunu.io') !== false;
+// Site URL will be determined when needed
 
-DEFINE('LUNUPAYMENT_PROCESSING_VERSION', (
- $LUNUPAYMENT_DEV
-    ? 'api.dev'
-    : (
-      $LUNUPAYMENT_RC
-        ? 'api.rc'
-        : (
-          $LUNUPAYMENT_TESTING
-            ? 'api.testing'
-            : (
-              $LUNUPAYMENT_SANDBOX
-                ? 'api.sandbox'
-                : 'api'
-            )
-        )
-    )
-));
+// Determine environment based on settings (not hardcoded domain checks)
+function lunupayment_get_api_environment() {
+    $settings = get_option('woocommerce_lunupayments_settings');
+    $environment = isset($settings['environment']) ? $settings['environment'] : 'production';
+    return $environment;
+}
 
+function lunupayment_get_processing_version() {
+    $environment = lunupayment_get_api_environment();
+    switch ($environment) {
+        case 'sandbox':
+            return 'api.sandbox';
+        default:
+            return 'api';
+    }
+}
 
-DEFINE('LUNUPAYMENT_WIDGET_VERSION', (
-  $LUNUPAYMENT_DEV
-    ? 'beta'
-    : (
-      $LUNUPAYMENT_RC
-        ? 'rc'
-        : (
-          $LUNUPAYMENT_TESTING
-            ? 'testing'
-            : ($LUNUPAYMENT_SANDBOX ? 'sandbox' : 'alpha')
-        )
-    )
-));
+function lunupayment_get_widget_version() {
+    $environment = lunupayment_get_api_environment();
+    switch ($environment) {
+        case 'sandbox':
+            return 'sandbox';
+        case 'testing':
+            return 'testing';
+        default:
+            return 'alpha';
+    }
+}
 
-DEFINE('LUNUPAYMENT_PAYMENT_CALLBACK_ENDPOINT', 'https://' . LUNUPAYMENT_SERVER_NAME . '/wp-json/lunu/payment/v1/notify');
+// Callback endpoint will be defined when needed
 
-DEFINE('LUNUPAYMENT_STATUS_PENDING', 'pending');
-DEFINE('LUNUPAYMENT_STATUS_PAID', 'paid');
-DEFINE('LUNUPAYMENT_STATUS_FAILED', 'failed');
-DEFINE('LUNUPAYMENT_STATUS_EXPIRED', 'expired');
-DEFINE('LUNUPAYMENT_STATUS_CANCELED', 'canceled');
-DEFINE('LUNUPAYMENT_STATUS_AWAITING_CONFIRMATION', 'awaiting_payment_confirmation');
+define('LUNUPAYMENT_STATUS_PENDING', 'pending');
+define('LUNUPAYMENT_STATUS_PAID', 'paid');
+define('LUNUPAYMENT_STATUS_FAILED', 'failed');
+define('LUNUPAYMENT_STATUS_EXPIRED', 'expired');
+define('LUNUPAYMENT_STATUS_CANCELED', 'canceled');
+define('LUNUPAYMENT_STATUS_AWAITING_CONFIRMATION', 'awaiting_payment_confirmation');
 
-DEFINE('LUNUPAYMENT_WC_STATUS_AWAITING_CONFIRMATION_WP', 'lunu-awaiting');
-DEFINE('LUNUPAYMENT_WC_STATUS_AWAITING_CONFIRMATION', 'wc-lunu-awaiting');
-DEFINE('LUNUPAYMENT_WC_STATUS_PROCESSING', 'wc-processing');
-DEFINE('LUNUPAYMENT_WC_STATUS_CANCELED', 'wc-cancelled');
-
-
-if (!defined('ABSPATH')) exit; // Exit if accessed directly
+define('LUNUPAYMENT_WC_STATUS_AWAITING_CONFIRMATION_WP', 'lunu-awaiting');
+define('LUNUPAYMENT_WC_STATUS_AWAITING_CONFIRMATION', 'wc-lunu-awaiting');
+define('LUNUPAYMENT_WC_STATUS_PROCESSING', 'wc-processing');
+define('LUNUPAYMENT_WC_STATUS_CANCELED', 'wc-cancelled');
 if (
   !function_exists('lunupayment_wc_gateway_load')
   && !function_exists('lunupayment_wc_action_links')
 ) {
 
-  DEFINE('LUNUPAYMENTWC', 'lunupayment-woocommerce');
+  define('LUNUPAYMENTWC', 'lunupayment-woocommerce');
 
   if (!defined('LUNUPAYMENTWC_AFFILIATE_KEY')) {
-    DEFINE('LUNUPAYMENTWC_AFFILIATE_KEY', 'lunupayment');
+    define('LUNUPAYMENTWC_AFFILIATE_KEY', 'lunupayment');
+    define('LUNUPAYMENT_PLUGIN_LOADED', true);
     add_action('plugins_loaded', 'lunupayment_wc_gateway_load', 20);
     add_filter('plugin_action_links', 'lunupayment_wc_action_links', 10, 2);
     add_filter('plugin_row_meta', 'lunupayment_wc_plugin_meta', 10, 2);
+    
+    // Declare HPOS compatibility
+    add_action('before_woocommerce_init', function() {
+      if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
+      }
+    });
   }
 
 
@@ -113,7 +122,7 @@ if (
   }
 
   function getUrlEndpoint() {
-    return 'https://' . LUNUPAYMENT_PROCESSING_VERSION . '.lunu.io/api/v1/payments/';
+    return 'https://' . lunupayment_get_processing_version() . '.lunupay.com/api/v1/payments/';
   }
 
 
@@ -140,7 +149,7 @@ if (
     if (
       strpos($file, 'lunupayment-woocommerce.php') !== false
       && class_exists('WC_Payment_Gateway')
-      && defined('lunupayment')
+      && defined('LUNUPAYMENT_PLUGIN_LOADED')
     ) {
 
       // Set link for Reviews.
@@ -182,7 +191,6 @@ if (
       private $success_url = '';
       private $cancel_url = '';
       private $coupon_code_prefix = '';
-      private $lunu_gift_enabled = false;
       private $lunu_logs_enabled = true;
 
       public function __construct() {
@@ -236,31 +244,50 @@ if (
         if (!$this->lunu_logs_enabled) {
           return;
         }
-        ob_start();
-        var_dump($val);
-        file_put_contents(
-          __DIR__ . '/logs/lunu_log.txt',
-          date('Y-m-d H:i:s') . ' ' . $message . ' ' . ob_get_clean() . PHP_EOL,
-          FILE_APPEND
-        );
+        
+        // Use WooCommerce logger
+        if (function_exists('wc_get_logger')) {
+          $logger = wc_get_logger();
+          $context = array('source' => 'lunupayment-woocommerce');
+          
+          $log_message = $message;
+          if ($val !== null) {
+            $log_message .= ' | Data: ' . wp_json_encode($val);
+          }
+          
+          $logger->info($log_message, $context);
+        }
       }
 
       private function lunupayment_settings() {
-        // Define user set variables
-        $this->enabled = trim($this->get_option('enabled'));
-        $this->app_id = trim($this->get_option('app_id'));
-        $this->api_secret = trim($this->get_option('api_secret'));
-        $this->success_url = trim($this->get_option('success_url'));
-        $this->cancel_url = trim($this->get_option('cancel_url'));
-        $this->coupon_code_prefix = trim($this->get_option('coupon_code_prefix'));
-        $this->lunu_gift_enabled = trim($this->get_option('lunu_gift_enabled')) === 'yes';
-        $this->lunu_logs_enabled = trim($this->get_option('lunu_logs_enabled')) === 'yes';
+        // Define user set variables with sanitization
+        $this->enabled = sanitize_text_field($this->get_option('enabled'));
+        $this->app_id = sanitize_text_field(trim($this->get_option('app_id')));
+        $this->api_secret = sanitize_text_field(trim($this->get_option('api_secret')));
+        $this->success_url = esc_url_raw(trim($this->get_option('success_url')));
+        $this->cancel_url = esc_url_raw(trim($this->get_option('cancel_url')));
+        $this->coupon_code_prefix = sanitize_text_field(trim($this->get_option('coupon_code_prefix')));
+        $this->lunu_logs_enabled = $this->get_option('lunu_logs_enabled') === 'yes';
 
         // Re-check
         if (!$this->title) {
           $this->title = __('Pay with Crypto (by Lunu Pay)', LUNUPAYMENTWC);
         }
+        
+        // Validate required fields
+        if ($this->enabled === 'yes' && (empty($this->app_id) || empty($this->api_secret))) {
+          add_action('admin_notices', array($this, 'lunupayment_missing_credentials_notice'));
+        }
+        
         return true;
+      }
+      
+      public function lunupayment_missing_credentials_notice() {
+        echo '<div class="error"><p>';
+        echo esc_html__('Lunu Payment Gateway is enabled but App ID or API Secret is missing. Please configure your credentials in the ', LUNUPAYMENTWC);
+        echo '<a href="' . esc_url(admin_url('admin.php?page=wc-settings&tab=checkout&section=lunupayments')) . '">';
+        echo esc_html__('payment gateway settings', LUNUPAYMENTWC);
+        echo '</a>.</p></div>';
       }
 
 
@@ -269,56 +296,58 @@ if (
           'enabled' => array(
             'title' => __('Enable/Disable', LUNUPAYMENTWC),
             'type' => 'checkbox',
-            'default' => (LUNUPAYMENTWC_AFFILIATE_KEY == 'lunupayment' ? 'yes' : 'no'),
+            'default' => 'no',
             'label' => __("Enable Payments by Cryptocurrencies in WooCommerce", LUNUPAYMENTWC)
+          ),
+          'environment' => array(
+            'title' => __('Environment', LUNUPAYMENTWC),
+            'type' => 'select',
+            'default' => 'production',
+            'description' => __('Select the API environment. Use sandbox for testing.', LUNUPAYMENTWC),
+            'options' => array(
+              'production' => __('Production', LUNUPAYMENTWC),
+              'sandbox' => __('Sandbox (Testing)', LUNUPAYMENTWC)
+            )
           ),
           'app_id' => array(
             'title' => __('App ID', LUNUPAYMENTWC),
             'type' => 'text',
-            'default' => '8ce43c7a-2143-467c-b8b5-fa748c598ddd'
+            'default' => '',
+            'description' => __('Enter your Lunu App ID. You can get this from your Lunu dashboard at https://console.lunupay.com/developer-options', LUNUPAYMENTWC),
+            'custom_attributes' => array('required' => 'required')
           ),
           'api_secret' => array(
             'title' => __('API Secret', LUNUPAYMENTWC),
-            'type' => 'text',
-            'default' => 'f1819284-031e-42ad-8832-87c0f1145696'
+            'type' => 'password',
+            'default' => '',
+            'description' => __('Enter your Lunu API Secret. Keep this secure!', LUNUPAYMENTWC),
+            'custom_attributes' => array('required' => 'required')
           ),
           'success_url' => array(
-            'title' => __('Redirect Url if success', LUNUPAYMENTWC),
+            'title' => __('Success Redirect URL', LUNUPAYMENTWC),
             'type' => 'text',
             'default' => '',
-            'description' => __('Redirect to another page after payment is received. For example, http://yoursite.com/thank_you.php', LUNUPAYMENTWC) . "<br/><br/><br/><br/><br/>"
+            'description' => __('Optional: Redirect to a custom page after successful payment. Leave empty to use the default order confirmation page.', LUNUPAYMENTWC),
+            'placeholder' => 'https://yoursite.com/thank-you'
           ),
           'cancel_url' => array(
-            'title' => __('Redirect Url if cancel', LUNUPAYMENTWC),
+            'title' => __('Cancel Redirect URL', LUNUPAYMENTWC),
             'type' => 'text',
             'default' => '',
-            'description' => __('Redirect to another page after payment is canceled. For example, http://yoursite.com/we_very_wait_you.php', LUNUPAYMENTWC) . "<br/><br/><br/><br/><br/>"
-          ),
-          'lunu_gift_enabled' => array(
-            'title' => __('Enable Lunu Gift', LUNUPAYMENTWC),
-            'type' => 'checkbox',
-            'default' => 'no',
-            'label' => __("Enable payments by Lunu Gifts if you marketing partners of Lunu", LUNUPAYMENTWC)
+            'description' => __('Optional: Redirect to a custom page after payment cancellation. Leave empty to redirect to cart.', LUNUPAYMENTWC),
+            'placeholder' => 'https://yoursite.com/cart'
           ),
           'lunu_logs_enabled' => array(
-            'title' => __('Enable logs', LUNUPAYMENTWC),
+            'title' => __('Enable Debug Logs', LUNUPAYMENTWC),
             'type' => 'checkbox',
-            'default' => 'yes',
-            'label' => ''
+            'default' => 'no',
+            'label' => __('Enable logging for debugging purposes', LUNUPAYMENTWC),
+            'description' => __('Logs will be saved in WooCommerce > Status > Logs', LUNUPAYMENTWC)
           )
         );
 
         return true;
       }
-
-      /*
-      // Admin footer page text
-      public function admin_footer_text() {
-        return sprintf(__("If you like <b>Lunu Cryptocurrencies Gateway for WooCommerce</b> please leave us a %s rating on %s. A huge thank you from Lunu in advance!", LUNUPAYMENTWC),
-        "<a href='https://wordpress.org/support/view/plugin-reviews/lunupayment-woocommerce?filter=5#postform' target='_blank'>&#9733;&#9733;&#9733;&#9733;&#9733;</a>",
-        "<a href='https://wordpress.org/support/view/plugin-reviews/lunupayment-woocommerce?filter=5#postform' target='_blank'>WordPress.org</a>");
-      }
-      */
 
       // Forward to WC Checkout Page
       public function process_payment($order_id) {
@@ -362,7 +391,6 @@ if (
         if (empty($cancel_url)) {
           $cancel_url = '/cart/';
         }
-        $lunu_gift_enabled = $this->lunu_gift_enabled;
 
         if ($order_status == "cancelled" || $post_status == "wc-cancelled") {
 
@@ -458,14 +486,21 @@ if (
         }
 
 
-        $widget_version = LUNUPAYMENT_WIDGET_VERSION;
+        $widget_version = lunupayment_get_widget_version();
 
         $payment_status = strtolower($payment_status);
 
         if ($payment_status === LUNUPAYMENT_STATUS_PENDING) {
+          $pay_now_text = esc_js(__('Pay Now', LUNUPAYMENTWC));
+          $widget_url = esc_url('https://plugins.lunu.io/packages/widget-ui/' . $widget_version . '.js');
+          $confirmation_token_safe = esc_js($confirmation_token);
+          $enable_gift = 'false';
+          $success_redirect = !empty($success_url) ? "window.location.href = '" . esc_js(esc_url($success_url)) . "';" : '';
+          $cancel_redirect = !empty($cancel_url) ? "window.location.href = '" . esc_js(esc_url($cancel_url)) . "';" : '';
+          
           echo "<script>
             window.jQuery && jQuery(document).ready(function() {
-              jQuery('.entry-title').text('" . __('Pay Now', LUNUPAYMENTWC) . "');
+              jQuery('.entry-title').text('" . $pay_now_text . "');
               jQuery('.woocommerce-thankyou-order-received').remove();
              });
           </script>
@@ -477,18 +512,14 @@ if (
             s.type = 'text/javascript';
             s.charset = 'utf-8';
             s.async = true;
-            s.src = 'https://plugins.lunu.io/packages/widget-ui/" . $widget_version . ".js?t=' + 1 * new Date();
+            s.src = '" . $widget_url . "?t=' + 1 * new Date();
             s.onload = function() {
               new window.Lunu.widgets.Payment(
                 d.getElementById('payment-form'),
                 {
-                  confirmation_token: '" . $confirmation_token . "',
-                  // Token that must be received from the Processing Service before making a payment
-                  // Required parameter
-
-                  enableLunuGift: " . ($lunu_gift_enabled ? 'true' : 'false') . ",
+                  confirmation_token: '" . $confirmation_token_safe . "',
+                  enableLunuGift: " . $enable_gift . ",
                   overlay: true,
-
                   callbacks: {
                     init_error: function(error) {
                       // Handling initialization errors
@@ -500,13 +531,13 @@ if (
                       // Handling a successful payment event
                       var handleSuccess = window.LUNU_PAYMENT_SUCCESS_CALLBACK;
                       handleSuccess && handleSuccess(params);
-                      " . (empty($success_url) ? "" : "window.location.href = '" . $success_url . "';") . "
+                      " . $success_redirect . "
                     },
                     payment_cancel: function() {
                       // Handling a payment cancellation event
                       var handleCancel = window.LUNU_PAYMENT_CANCEL_CALLBACK;
                       handleCancel && handleCancel();
-                      " . (empty($cancel_url) ? "" : "window.location.href = '" . $cancel_url . "';") . "
+                      " . $cancel_redirect . "
                     },
                     payment_close: function() {
                       // Handling the event of closing the widget window
@@ -677,7 +708,7 @@ if (
           'amount' => '' . $params['amount'],
 		  'fiat_code' => '' . $params['currency'],
           'amount_of_shipping' => '' . $params['amount_of_shipping'],
-          'callback_url' => LUNUPAYMENT_PAYMENT_CALLBACK_ENDPOINT,
+          'callback_url' => rest_url('lunu/payment/v1/notify'),
           'description' => '' . $params['description'],
           'expires' => date("c", $time + $timeout)
         );
@@ -691,7 +722,7 @@ if (
             'Idempotence-Key' => 'WC_' . $time . '_' . $shop_order_id,
             'Content-Type' => 'application/json',
             'User-Agent' => 'WordPress v' . (isset($wp_version) ? $wp_version : '') .
-              ' | WooCommerce v' . WOOCOMMERCE_VERSION . ' | Lunu Extension 2.0.0'
+              ' | WooCommerce v' . WOOCOMMERCE_VERSION . ' | Lunu Extension v' . LUNUPAYMENT_VERSION
           ),
           'body' => json_encode($data)
         );
@@ -748,7 +779,8 @@ if (
           }
         }
         $this->lunu_log('Payment checking error', array(
-          'payment_url' => $payment_url,
+          'payment_url' => $url,
+          'payment_id' => $payment_id,
           'response' => $response,
         ));
         return null;
@@ -795,7 +827,9 @@ function lunu_payment_callback_notify(WP_REST_Request $request) {
 
   $gateways = $woocommerce->payment_gateways->payment_gateways();
 
-  if (!isset($gateways['lunupayments'])) return;
+  if (!isset($gateways['lunupayments'])) {
+    return new WP_Error('gateway_not_found', 'Payment gateway not configured', array('status' => 404));
+  }
 
   $success = $gateways['lunupayments']->lunupayment_callback(
       json_decode($request->get_body(), true)
@@ -807,9 +841,43 @@ function lunu_payment_callback_notify(WP_REST_Request $request) {
 }
 
 
-function lunu_permission_callback() {
+function lunu_permission_callback(WP_REST_Request $request) {
+  // Verify the request is coming from Lunu servers
+  // Check for valid payment data and signature
+  
+  $body = $request->get_body();
+  $data = json_decode($body, true);
+  
+  if (empty($data) || !isset($data['id'])) {
+    return new WP_Error('invalid_request', 'Invalid payment notification', array('status' => 400));
+  }
+  
+  // Get the signature from headers
+  $signature = $request->get_header('X-Lunu-Signature');
+  
+  // If signature is provided, verify it
+  if (!empty($signature)) {
+    global $woocommerce;
+    $gateways = $woocommerce->payment_gateways->payment_gateways();
+    
+    if (isset($gateways['lunupayments'])) {
+      $api_secret = $gateways['lunupayments']->get_option('api_secret');
+      
+      if (!empty($api_secret)) {
+        // Verify HMAC signature
+        $expected_signature = hash_hmac('sha256', $body, $api_secret);
+        
+        if (!hash_equals($expected_signature, $signature)) {
+          return new WP_Error('invalid_signature', 'Invalid signature', array('status' => 403));
+        }
+      }
+    }
+  }
+  
+  // Basic validation passed
   return true;
 }
+
 add_action('rest_api_init', function() {
   register_rest_route('lunu/payment/v1', '/notify', array(
     'methods' => 'POST',
