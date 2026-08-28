@@ -42,15 +42,13 @@ function lunupayment_get_processing_version() {
     }
 }
 
-function lunupayment_get_widget_version() {
+function lunupayment_get_widget_host() {
     $environment = lunupayment_get_api_environment();
     switch ($environment) {
         case 'sandbox':
-            return 'sandbox';
-        case 'testing':
-            return 'testing';
+            return 'widget.sandbox';
         default:
-            return 'alpha';
+            return 'widget';
     }
 }
 
@@ -122,7 +120,7 @@ if (
   }
 
   function getUrlEndpoint() {
-    return 'https://' . lunupayment_get_processing_version() . '.lunupay.com/api/v1/payments/';
+    return 'https://' . lunupayment_get_processing_version() . '.lunupay.com/legacy-api/v1/payments/';
   }
 
 
@@ -389,7 +387,8 @@ if (
         $success_url = $this->success_url;
         $cancel_url = $this->cancel_url;
         if (empty($cancel_url)) {
-          $cancel_url = '/cart/';
+          // absolute URL: also passed to the external widget as the cancel redirect target
+          $cancel_url = function_exists('wc_get_cart_url') ? wc_get_cart_url() : home_url('/cart/');
         }
 
         if ($order_status == "cancelled" || $post_status == "wc-cancelled") {
@@ -432,11 +431,10 @@ if (
         }
 
 
-        $confirmation_token = get_post_meta($order_id, '_lunupayment_confirmation_token', true);
+        $payment_id = get_post_meta($order_id, '_lunupayment_id', true);
 
-        if ($confirmation_token) {
+        if ($payment_id) {
           $payment_status = get_post_meta($order_id, '_lunupayment_status', true);
-          $payment_id = get_post_meta($order_id, '_lunupayment_id', true);
         } else {
 
           $description = array();
@@ -461,7 +459,7 @@ if (
 
           if (!empty($payment_information['error_message'])) {
               $error_message = htmlspecialchars($payment_information['error_message']);
-          } elseif (empty($payment_information)) {
+          } elseif (empty($payment_information) || empty($payment_information['id'])) {
               $error_message = 'Lunu Payment service is temporarily unavailable';
           }
 
@@ -471,84 +469,30 @@ if (
           }
 
           $payment_id = $payment_information['id'];
-          $confirmation_token = $payment_information['confirmation_token'];
-          $confirmation_url = $payment_information['confirmation_url'];
           $created_at = $payment_information['created_at'];
           $expires = $payment_information['expires'];
           $payment_status = $payment_information['status'];
 
           update_post_meta($order_id, '_lunupayment_id', $payment_id);
-          update_post_meta($order_id, '_lunupayment_confirmation_token', $confirmation_token);
-          update_post_meta($order_id, '_lunupayment_confirmation_url', $confirmation_url);
           update_post_meta($order_id, '_lunupayment_created_at', $created_at);
           update_post_meta($order_id, '_lunupayment_expires', $expires);
           update_post_meta($order_id, '_lunupayment_status', $payment_status);
         }
 
 
-        $widget_version = lunupayment_get_widget_version();
-
         $payment_status = strtolower($payment_status);
 
         if ($payment_status === LUNUPAYMENT_STATUS_PENDING) {
-          $pay_now_text = esc_js(__('Pay Now', LUNUPAYMENTWC));
-          $widget_url = esc_url('https://plugins.lunu.io/packages/widget-ui/' . $widget_version . '.js');
-          $confirmation_token_safe = esc_js($confirmation_token);
-          $enable_gift = 'false';
-          $success_redirect = !empty($success_url) ? "window.location.href = '" . esc_js(esc_url($success_url)) . "';" : '';
-          $cancel_redirect = !empty($cancel_url) ? "window.location.href = '" . esc_js(esc_url($cancel_url)) . "';" : '';
-          
-          echo "<script>
-            window.jQuery && jQuery(document).ready(function() {
-              jQuery('.entry-title').text('" . $pay_now_text . "');
-              jQuery('.woocommerce-thankyou-order-received').remove();
-             });
-          </script>
-          <!--HTML element that will display the payment form-->
-          <div id=\"payment-form\"></div><br><br>
-          <script>
-          (function(d, t) {
-            var n = d.getElementsByTagName(t)[0], s = d.createElement(t);
-            s.type = 'text/javascript';
-            s.charset = 'utf-8';
-            s.async = true;
-            s.src = '" . $widget_url . "?t=' + 1 * new Date();
-            s.onload = function() {
-              new window.Lunu.widgets.Payment(
-                d.getElementById('payment-form'),
-                {
-                  confirmation_token: '" . $confirmation_token_safe . "',
-                  enableLunuGift: " . $enable_gift . ",
-                  overlay: true,
-                  callbacks: {
-                    init_error: function(error) {
-                      // Handling initialization errors
-                    },
-                    init_success: function(data) {
-                      // Handling a Successful Initialization
-                    },
-                    payment_paid: function(params) {
-                      // Handling a successful payment event
-                      var handleSuccess = window.LUNU_PAYMENT_SUCCESS_CALLBACK;
-                      handleSuccess && handleSuccess(params);
-                      " . $success_redirect . "
-                    },
-                    payment_cancel: function() {
-                      // Handling a payment cancellation event
-                      var handleCancel = window.LUNU_PAYMENT_CANCEL_CALLBACK;
-                      handleCancel && handleCancel();
-                      " . $cancel_redirect . "
-                    },
-                    payment_close: function() {
-                      // Handling the event of closing the widget window
-                    }
-                  }
-                }
-              );
-            };
-            n.parentNode.insertBefore(s, n);
-          })(document, 'script');
-          </script>";
+          $widget_success_url = !empty($success_url) ? $success_url : $this->get_return_url($order);
+
+          $payment_page_url = 'https://' . lunupayment_get_widget_host() . '.lunupay.com/?' . http_build_query(array(
+            'order_id' => $payment_id, // id of the payment created in Lunu
+            'success' => $widget_success_url, // page the widget redirects to when the payment is successful
+            'cancel' => $cancel_url // page the widget redirects to when it is closed without paying
+          ));
+
+          echo "<script>window.location.replace('" . esc_js(esc_url_raw($payment_page_url)) . "');</script>";
+          echo '<p><a href="' . esc_url($payment_page_url) . '">' . esc_html__('Pay Now', LUNUPAYMENTWC) . '</a></p>';
           return true;
         }
 
