@@ -1,2 +1,33 @@
-.idea
+# WordPress
+wp-config.php
+wp-content/uploads/
+wp-content/blogs.dir/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/cache/
+wp-content/backups/
+
+# Plugin specific
+*.log
+*.zip
+lunupayment-woocommerce/logs/
+node_modules/
+vendor/
+
+# OS files
 .DS_Store
+Thumbs.db
+desktop.ini
+PUBLICATION_READY.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.old
